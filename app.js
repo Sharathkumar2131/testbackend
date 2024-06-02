@@ -1,46 +1,54 @@
-require('dotenv').config(); // Add this line to load .env variables
-
+require('dotenv').config();
 const express = require('express');
 const sql = require('mssql');
-
 const app = express();
-const port = process.env.PORT || 5000;
 
 // Database configuration
 const dbConfig = {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     server: process.env.DB_SERVER,
-    port:1433,
     database: process.env.DB_DATABASE,
+    port: parseInt(process.env.DB_PORT),
     options: {
-        encrypt: false, 
-        trustServerCertificate: true 
-    }
+        encrypt: false, // Use true if you're on Azure
+        enableArithAbort: true
+    },
+    pool: {
+        max: 10,
+        min: 0,
+        idleTimeoutMillis: 30000
+    },
+    connectionTimeout: 15000, // 15 seconds
+    requestTimeout: 15000 // 15 seconds
 };
 
-// Function to get data from SQL Server
-async function getData() {
-    try {
-        await sql.connect(dbConfig);
-        const result = await sql.query`SELECT * FROM users`;
-        return result.recordset;
-    } catch (err) {
-        console.error('Database query error:', err);
-        throw err;
+// Connect to the database
+sql.connect(dbConfig).then(pool => {
+    if (pool.connecting) {
+        console.log('Connecting to the database...');
     }
-}
-
-// API endpoint to get user data
-app.get('/api/users', async (req, res) => {
-    try {
-        const data = await getData();
-        res.json(data);
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to fetch user data', details: err.message });
+    if (pool.connected) {
+        console.log('Connected to the database.');
     }
-});
 
-app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
+    // Define a route to get users
+    app.get('/users', async (req, res) => {
+        try {
+            const result = await pool.request().query('SELECT * FROM users');
+            res.json(result.recordset);
+        } catch (err) {
+            console.error('SQL error', err);
+            res.status(500).json({ error: 'Failed to fetch user data', details: err.message });
+        }
+    });
+
+    // Start the Express server
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+
+}).catch(err => {
+    console.error('Database connection error', err);
 });
